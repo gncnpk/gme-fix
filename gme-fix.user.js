@@ -1,73 +1,70 @@
 // ==UserScript==
 // @name         GME Fix
 // @namespace    https://github.com/gncnpk/gme-fix
-// @version      0.0.1
+// @version      0.0.2
 // @description  Allows Google Maps road editor to be usable outside of a iFrame.
 // @author       Gavin Canon-Phratsachack (https://github.com/gncnpk)
 // @match        https://maps.google.com/roadeditor/iframe*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=google.com
 // @grant        none
-// @run-at document-start
+// @run-at       document-start
 // ==/UserScript==
 
-(function() {
-    'use strict';
+(function () {
+  'use strict';
 
-    // Create a proxy to intercept property assignments
-    function createInterceptedObject(target = {}) {
-        return new Proxy(target, {
-            set: function(obj, prop, value) {
-                if (prop === 'ag') {
-                    // Override the ag function when it's assigned
-                    console.log('Intercepting ag function assignment');
-                    obj[prop] = function(a, b) {
-                        console.log('ag redirect blocked:', a, b);
-                        return false;
-                    };
-                    return true;
-                } else {
-                    obj[prop] = value;
-                    return true;
-                }
-            },
-            get: function(obj, prop) {
-                return obj[prop];
-            }
-        });
+  let originalObject = null;
+  let agBlocked = false;
+
+  // Lightweight function to block ag calls
+  function blockAg() {
+    return false;
+  }
+
+  // Intercept the object assignment with minimal overhead
+  function interceptObject(obj) {
+    if (!obj || agBlocked) return obj;
+
+    // Only intercept if 'ag' property is being set
+    if (obj.hasOwnProperty('ag')) {
+      console.log('Blocking ag function');
+      obj.ag = blockAg;
+      agBlocked = true;
     }
 
-    // Override the global object creation
-    let originalObject = window.default_GeoUgcMapsRoadsEditorUi;
-
-    Object.defineProperty(window, 'default_GeoUgcMapsRoadsEditorUi', {
-        get: function() {
-            return originalObject;
+    // Set up a one-time property descriptor for future 'ag' assignments
+    if (!obj.hasOwnProperty('ag')) {
+      Object.defineProperty(obj, 'ag', {
+        set: function (value) {
+          console.log('ag assignment blocked');
+          // Don't actually set the value, keep our blocker
         },
-        set: function(value) {
-            console.log('default_GeoUgcMapsRoadsEditorUi being set');
-            originalObject = createInterceptedObject(value || {});
+        get: function () {
+          return blockAg;
         },
-        configurable: true
-    });
-
-    // Also override on 'this' context (in case it's not window)
-    if (typeof this !== 'undefined' && this !== window) {
-        Object.defineProperty(this, 'default_GeoUgcMapsRoadsEditorUi', {
-            get: function() {
-                return originalObject;
-            },
-            set: function(value) {
-                console.log('default_GeoUgcMapsRoadsEditorUi being set on this');
-                originalObject = createInterceptedObject(value || {});
-            },
-            configurable: true
-        });
+        configurable: true,
+        enumerable: true,
+      });
     }
 
-    // Initialize with intercepted object if it doesn't exist
-    if (!window.default_GeoUgcMapsRoadsEditorUi) {
-        window.default_GeoUgcMapsRoadsEditorUi = createInterceptedObject({});
-    }
+    return obj;
+  }
 
-    console.log('Userscript loaded - ready to intercept ag function');
+  // Set up property descriptor for the main object
+  Object.defineProperty(window, 'default_GeoUgcMapsRoadsEditorUi', {
+    get: function () {
+      return originalObject;
+    },
+    set: function (value) {
+      originalObject = interceptObject(value || {});
+    },
+    configurable: true,
+  });
+
+  // Initialize if needed
+  if (!window.default_GeoUgcMapsRoadsEditorUi) {
+    window.default_GeoUgcMapsRoadsEditorUi = interceptObject({});
+  }
+
+  console.log('GME Fix loaded - ag function blocking ready');
 })();
